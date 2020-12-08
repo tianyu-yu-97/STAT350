@@ -1,0 +1,169 @@
+---
+title: "team project"
+output: html_document
+---
+### read data , coloration analysis and new variable    
+```{r}
+df <- read.csv("insurance.csv")
+cor(df[,c(1,3,4,7)])#relative strong relationship:aage & bmi,charges & age,charges & bmi
+pairs(df[,c(1,3,4,7)])
+df[df$bmi <30,"weight_status"] ="not obses"
+df[df$bmi>=30,"weight_status"] ="obese"
+df$weight_status <- as.factor(df$weight_status)
+str(df)
+```
+### categorical variable analysis      
+```{r}
+library(ggplot2)
+ggplot(df,aes(x=region,y=charges))+geom_boxplot()
+ggplot(df,aes(x=factor(children),y=charges))+geom_boxplot()
+ggplot(df,aes(x=weight_status,y=charges))+geom_boxplot()
+ggplot(df,aes(x=smoker,y=charges))+geom_boxplot()
+```
+
+### use BIC,cp, AIC to find model     
+##### BIC       
+```{r}
+library(leaps)
+library(ggplot2)
+full_model<-regsubsets(charges~.+age:sex+age:bmi+age:children+age:smoker+age:region+age:weight_status+sex:bmi+sex:children+sex:smoker+sex:region+sex:weight_status+bmi:children+bmi:smoker+bmi:region+children:smoker+children:region+children:weight_status+smoker:region+smoker:weight_status, data=df,nvmax=38)
+model_result = summary(full_model)
+lm_full<-lm(charges~.+age:sex+age:bmi+age:children+age:smoker+age:region+age:weight_status+sex:bmi+sex:children+sex:smoker+sex:region+sex:weight_status+bmi:children+bmi:smoker+bmi:region+children:smoker+children:region+children:weight_status+smoker:region+smoker:weight_status, data=df)
+```
+
+```{r}
+model_bic <- data.frame(submodel=factor(1:38), bic=model_result$bic)
+model_bic[which.min(model_bic$bic),"submodel"]
+ggplot(model_bic, aes(submodel,bic,group=1))+geom_point(color="blue",size=1)+geom_line(size=1,color="red")+labs(title = "BIC for model")
+```
+    
+the full model with interactction has 38 variables, and model with 5 variable has the lowest BIC.
+   
+```{r}
+forward_model = regsubsets(charges~.+age:sex+age:bmi+age:children+age:smoker+age:region+age:weight_status+sex:bmi+sex:children+sex:smoker+sex:region+sex:weight_status+bmi:children+bmi:smoker+bmi:region+children:smoker+children:region+children:weight_status+smoker:region+smoker:weight_status, data=df,nvmax=38,method = "forward")
+backward_model = regsubsets(charges~.+age:sex+age:bmi+age:children+age:smoker+age:region+age:weight_status+sex:bmi+sex:children+sex:smoker+sex:region+sex:weight_status+bmi:children+bmi:smoker+bmi:region+children:smoker+children:region+children:weight_status+smoker:region+smoker:weight_status, data=df,nvmax=38,method = "backward")
+```
+
+```{r}
+forward_result = summary(forward_model)
+forward_result
+```
+
+```{r}
+backward_result = summary(backward_model)
+backward_result
+```
+
+according to the forward_result and backward_result , choose the variable   
+age,children,bmi:regionsouthwest,bmi:smokeryes and smokeryes:weight_statusobese   
+
+```{r}
+modelfrombic<-lm(charges~age+children+bmi:region+bmi:smoker+smoker:weight_status,data=df)
+
+```
+
+##### CP
+
+```{r}
+model_cp <- data.frame(submodel=factor(1:38), cp=model_result$cp)
+model_cp[which.min(model_cp$cp),"submodel"]
+ggplot(model_cp, aes(submodel,cp,group=1))+geom_point(color="blue",size=1,)+geom_line(size=1,color="red")+labs(title = "Cp for model")
+```
+   
+According to plot, the model with 9 variable has the lowest CP.    
+###### CPFORWARD           
+```{r}
+model_cp_forward<-lm(charges~age+sex+children+region+age:region+age:bmi+bmi:smoker+bmi:region+smoker:weight_status,data=df)
+
+```
+###### CPBACKWARD         
+```{r}
+model_cp_backward<-lm(charges~age+sex+children+age:bmi+age:region+bmi:smoker+smoker:weight_status,data=df)
+
+```
+
+##### AIC 
+
+```{r}
+step(lm_full,direction = "both")
+step(lm_full,direction = "forward")
+step(lm_full,direction = "backward")
+```
+
+```{r}
+model_step <- lm(charges ~ age + sex + bmi + children + smoker + region + weight_status + bmi:smoker + bmi:region + smoker:weight_status,df)
+```
+##### check BIC and AIC for four model    
+```{r}
+bic_cp_back <- BIC(model_cp_backward)
+bic_cp_for <- BIC(model_cp_forward)
+bic_modelfrombic <- BIC(modelfrombic)
+bic_step <- BIC(model_step)
+bic <- c(bic_cp_back,bic_cp_for,bic_modelfrombic,bic_step)
+names(bic) <- c("model_cp_backward","model_cp_forward","modelfrombic","model_step")
+bic
+```
+
+```{r}
+
+aic_cp_back <- AIC(model_cp_backward)
+aic_cp_for <- AIC(model_cp_forward)
+aic_modelfrombic <- AIC(modelfrombic)
+aic_step <- AIC(model_step)
+aic <- c(aic_cp_back,aic_cp_for,aic_modelfrombic,aic_step)
+names(aic) <- c("model_cp_backward","model_cp_forward","modelfrombic","model_step")
+aic
+```
+After check BIC and AIC ,the best model is  model_step. 
+
+### using risidual plot to check the model  and model optimization 
+```{r}
+plot(modelfrombic)#may have some nonlinear relationship
+```
+        
+###### check the new model with nonlinear relationship   
+```{r}
+test_model <- lm(charges~poly(age,2)+poly(children,3)+bmi:region+bmi:smoker+smoker:weight_status,df)
+summary(test_model)
+second_model <- lm(charges~poly(age,2)+children+bmi:region+bmi:smoker+smoker:weight_status,df)
+summary(second_model)
+AIC(second_model)# min
+AIC(test_model)
+aic_modelfrombic
+BIC(second_model)#min 
+BIC(test_model)
+bic_modelfrombic
+```
+   
+the new model have lowest AIC and BIC            
+
+### model volidation   
+```{r}
+#volidation
+library(caret)
+set.seed(350) 
+n <-  ceiling(0.75*length(df$charges))# samples
+result <- NULL
+for (i in 1:5){
+training_samps = sample(c(1:length(df$charges)),n)# sampled cases
+train_data <- df[training_samps, ]# tranning data
+test_data <- df[-training_samps,]
+final_model <- lm(charges~poly(age,2)+children+bmi:region+bmi:smoker+smoker:weight_status,train_data)
+yhat <- predict(final_model ,newdata = test_data)
+R2 = R2(yhat, test_data$charges)
+RMSPE = RMSE(yhat, test_data$charges)
+MAPE = MAE(yhat, test_data$charges)
+RMSPE_N = RMSPE/sd(test_data$charges)
+result <- rbind(result,c( i,R2,RMSPE,MAPE,RMSPE_N))}
+result <- as.data.frame(result)
+names(result) <- c("index","R2","RMSPE","MAPE","RMSPE_N")
+result
+```
+  
+### the final model & residual plot
+```{r}
+summary(second_model)
+plot(second_model)
+```
+
+
